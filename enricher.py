@@ -41,8 +41,41 @@ def check_virustotal(ip):
     except requests.exceptions.RequestException as e:
         print(f"Error querying VirusTotal: {e}")    
 
+def check_abuseipdb(ip):
+    print(f"Checking {ip} against AbuseIPDB...")
+    
+    url = "https://api.abuseipdb.com/api/v2/check"
+    
+    # AbuseIPDB uses query parameters in the URL to pass the IP and timeframe
+    querystring = {
+        'ipAddress': ip,
+        'maxAgeInDays': '90'
+    }
+    
+    headers = {
+        'Accept': 'application/json',
+        'Key': ABUSE_API_KEY
+    }
+    
+    try:
+        # Note the addition of params=querystring here
+        response = requests.get(url, headers=headers, params=querystring)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        # Drill down into AbuseIPDB's specific JSON structure
+        score = data['data']['abuseConfidenceScore']
+        total_reports = data['data']['totalReports']
+        
+        print(f"AbuseIPDB Result: Confidence score of {score}% with {total_reports} recent reports.")
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Error querying AbuseIPDB: {e}")
+
 if __name__ == "__main__":
     if not VT_API_KEY or not ABUSE_API_KEY:
         print("Error: Missing API keys in .env file.")
     else:
         check_virustotal(TARGET_IP)
+        check_abuseipdb(TARGET_IP)
