@@ -3,6 +3,8 @@ import json
 import requests
 import argparse
 from dotenv import load_dotenv
+from rich.console import Console
+from rich.json import JSON
 
 # Load environment variables
 load_dotenv()
@@ -61,7 +63,8 @@ def generate_soar_ticket(ip, vt_data, abuse_data):
     }
     
     # json.dumps() converts the Python dictionary into a beautifully formatted JSON string
-    print(json.dumps(ticket, indent=4))
+    console = Console()
+    console.print(JSON.from_data(ticket))
 
 if __name__ == "__main__":
     # Set up argument parser
