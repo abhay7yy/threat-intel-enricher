@@ -1,13 +1,13 @@
 import os
 import json
 import requests
+import argparse
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
 VT_API_KEY = os.getenv("VT_API_KEY")
 ABUSE_API_KEY = os.getenv("ABUSE_API_KEY")
-TARGET_IP = "8.8.8.8" 
 
 def check_virustotal(ip):
     url = f"https://www.virustotal.com/api/v3/ip_addresses/{ip}"
@@ -64,12 +64,20 @@ def generate_soar_ticket(ip, vt_data, abuse_data):
     print(json.dumps(ticket, indent=4))
 
 if __name__ == "__main__":
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description="Automated SOC IP Enrichment Tool")
+    parser.add_argument("ip", help="The suspicious IP address to investigate")
+
+    # Parse the arguments provided in the terminal
+    args = parser.parse_args()
+
     if not VT_API_KEY or not ABUSE_API_KEY:
         print("Error: Missing API keys in .env file.")
     else:
-        # 1. Gather data
-        vt_results = check_virustotal(TARGET_IP)
-        abuse_results = check_abuseipdb(TARGET_IP)
+        # Pass the IP from the terminal into function
+
+        vt_results = check_virustotal(args.ip)
+        abuse_results = check_abuseipdb(args.ip)
         
         # 2. Generate the ticket
-        generate_soar_ticket(TARGET_IP, vt_results, abuse_results)
+        generate_soar_ticket(args.ip, vt_results, abuse_results)
