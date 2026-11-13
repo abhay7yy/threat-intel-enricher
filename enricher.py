@@ -1,81 +1,75 @@
 import os
+import json
 import requests
 from dotenv import load_dotenv
 
-# Load environment variables from the .env file
+# Load environment variables
 load_dotenv()
-
 VT_API_KEY = os.getenv("VT_API_KEY")
 ABUSE_API_KEY = os.getenv("ABUSE_API_KEY")
-
-# Hardcoded IP for initial testing
 TARGET_IP = "8.8.8.8" 
 
 def check_virustotal(ip):
-    print(f"Checking {ip} against VirusTotal...")
-    
-    # The specific API endpoint for IP addresses
-    url = f"https://virustotal.com/api/v3/ip_addresses/{ip}"
-
-    # VirusTotal requires the API key to be passed in a header named 'x-apikey'
-    headers = {
-        "x-apikey": VT_API_KEY
-    } 
-
+    url = f"https://www.virustotal.com/api/v3/ip_addresses/{ip}"
+    headers = {"x-apikey": VT_API_KEY}
     try:
-        # Send the GET request
-        response = requests.get(url,headers=headers)
-
-        # This will automatically trigger an error if the API rejects our request (bad key, rate limit)
+        response = requests.get(url, headers=headers)
         response.raise_for_status()
-
-        # Convert the raw response into a Py dictionary
         data = response.json()
-
-        # Drill down into the JSON structure to find the specific "malicious" score
-        malicious_votes = data['data']['attributes']['last_analysis_stats']['malicious']
-        total_votes = sum(data['data']['attributes']['last_analysis_stats'].values())
-
-        print(f"VirusTotal Result: {malicious_votes} out of {total_votes} security vendors flagged this IP as malicious.")
-
+        malicious = data['data']['attributes']['last_analysis_stats']['malicious']
+        total = sum(data['data']['attributes']['last_analysis_stats'].values())
+        # Return a dictionary instead of printing
+        return {"malicious_flags": malicious, "total_scans": total}
     except requests.exceptions.RequestException as e:
-        print(f"Error querying VirusTotal: {e}")    
+        return {"error": str(e)}
 
 def check_abuseipdb(ip):
-    print(f"Checking {ip} against AbuseIPDB...")
-    
     url = "https://api.abuseipdb.com/api/v2/check"
-    
-    # AbuseIPDB uses query parameters in the URL to pass the IP and timeframe
-    querystring = {
-        'ipAddress': ip,
-        'maxAgeInDays': '90'
-    }
-    
-    headers = {
-        'Accept': 'application/json',
-        'Key': ABUSE_API_KEY
-    }
-    
+    querystring = {'ipAddress': ip, 'maxAgeInDays': '90'}
+    headers = {'Accept': 'application/json', 'Key': ABUSE_API_KEY}
     try:
-        # Note the addition of params=querystring here
         response = requests.get(url, headers=headers, params=querystring)
         response.raise_for_status()
-        
         data = response.json()
-        
-        # Drill down into AbuseIPDB's specific JSON structure
-        score = data['data']['abuseConfidenceScore']
-        total_reports = data['data']['totalReports']
-        
-        print(f"AbuseIPDB Result: Confidence score of {score}% with {total_reports} recent reports.")
-        
+        # Return a dictionary instead of printing
+        return {
+            "confidence_score": data['data']['abuseConfidenceScore'],
+            "total_reports": data['data']['totalReports']
+        }
     except requests.exceptions.RequestException as e:
-        print(f"Error querying AbuseIPDB: {e}")
+        return {"error": str(e)}
+
+def generate_soar_ticket(ip, vt_data, abuse_data):
+    # Basic logic to determine severity based on API results
+    severity = "Low"
+    if vt_data.get("malicious_flags", 0) > 0 or abuse_data.get("confidence_score", 0) > 0:
+        if vt_data.get("malicious_flags", 0) > 3 or abuse_data.get("confidence_score", 0) > 50:
+            severity = "High"
+        else:
+            severity = "Medium"
+
+    # Construct the final JSON payload
+    ticket = {
+        "alert_type": "Suspicious IP Enrichment",
+        "indicator": ip,
+        "calculated_severity": severity,
+        "enrichment_sources": {
+            "virustotal": vt_data,
+            "abuseipdb": abuse_data
+        },
+        "recommended_action": "Block at perimeter firewall" if severity == "High" else "Continue monitoring"
+    }
+    
+    # json.dumps() converts the Python dictionary into a beautifully formatted JSON string
+    print(json.dumps(ticket, indent=4))
 
 if __name__ == "__main__":
     if not VT_API_KEY or not ABUSE_API_KEY:
         print("Error: Missing API keys in .env file.")
     else:
-        check_virustotal(TARGET_IP)
-        check_abuseipdb(TARGET_IP)
+        # 1. Gather data
+        vt_results = check_virustotal(TARGET_IP)
+        abuse_results = check_abuseipdb(TARGET_IP)
+        
+        # 2. Generate the ticket
+        generate_soar_ticket(TARGET_IP, vt_results, abuse_results)
